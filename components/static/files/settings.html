@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>⚙️ Device Settings</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <form id="settings-form" class="card" onsubmit="return saveSettings(event)">
+            <h3>📝 Configuration</h3>
+            <div id="settings-fields"></div>
+
+            <div class="button-group">
+                <button type="submit">💾 Save Settings</button>
+                <button type="button" onclick="rebootDevice()" class="secondary">🔄 Reboot Device</button>
+            </div>
+        </form>
+
+
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        let rebootRequiredSettings = [];
+
+        const settingsConfig = {
+            "wifi_sta_ssid": {type: "string", reboot: true},
+            "wifi_sta_password": {type: "password", reboot: true},
+            "ap_mode_enabled": {type: "boolean", reboot: true},
+            "ap_ssid": {type: "string", reboot: true},
+            "ap_password": {type: "password", reboot: true},
+
+            "mqtt_enabled": {type: "boolean", reboot: false},
+            "mqtt_uri": {type: "string", reboot: false},
+            "mqtt_client_id": {type: "string", reboot: false},
+            "mqtt_username": {type: "string", reboot: false},
+            "mqtt_password": {type: "password", reboot: false},
+            "mqtt_keepalive": {type: "number", reboot: false, min: 10, max: 120},
+
+            "distance_threshold": {type: "number", reboot: false, min: 10, max: 500},
+            "distance_trigger_time": {type: "number", reboot: false, min: 1, max: 60},
+
+            "buzzer_enabled": {type: "boolean", reboot: false},
+
+            "log_capture_enabled": {type: "boolean", reboot: false},
+            "log_size_limit": {type: "number", reboot: true, min: 256, max: 10000}
+        };
+
+        function generateSettingInput(key, config) {
+            switch(config.type) {
+                case 'boolean':
+                    return `
+                        <select name="${key}">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    `;
+                case 'number':
+                    return `<input type="number" name="${key}" min="${config.min || 0}" 
+                             max="${config.max || 100000}" step="${config.step || 1}">`;
+                case 'password':
+                    return `<input type="password" name="${key}" autocomplete="new-password">`;
+                default:
+                    return `<input type="text" name="${key}">`;
+            }
+        }
+
+        function generateSettingsForm() {
+            const container = document.getElementById('settings-fields');
+            let html = '';
+
+            for (const [key, config] of Object.entries(settingsConfig)) {
+                html += `
+                    <div class="form-group">
+                        <label>${key.replace(/_/g, ' ').toUpperCase()}</label>
+                        ${generateSettingInput(key, config)}
+                        ${config.reboot ? '<div class="field-reboot-notice">🔄 Requires reboot to take effect</div>' : ''}
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function loadSettings() {
+            try {
+                const settings = await fetchWithAuth(`${API_BASE}/settings`);
+                rebootRequiredSettings = [];
+
+                for (const [key, value] of Object.entries(settings)) {
+                    const element = document.querySelector(`[name="${key}"]`);
+                    if (element) {
+                        element.value = value;
+                        if (settingsConfig[key]?.reboot) {
+                            rebootRequiredSettings.push(key);
+                        }
+                    }
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function saveSettings(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const settings = {};
+            let hasErrors = false;
+
+            for (const [key, value] of formData.entries()) {
+                const config = settingsConfig[key];
+                if (!config) continue;
+
+                if (config.type === 'number') {
+                    const numValue = Number(value);
+                    if (isNaN(numValue) ||
+                        (config.min !== undefined && numValue < config.min) ||
+                        (config.max !== undefined && numValue > config.max)) {
+                        showError(`Invalid value for ${key}: Must be between ${config.min} and ${config.max}`);
+                        hasErrors = true;
+                    }
+                    settings[key] = numValue;
+                } else if (config.type === 'boolean') {
+                    settings[key] = value === 'true';
+                } else {
+                    settings[key] = value.trim();
+                }
+            }
+
+            if (hasErrors) return;
+
+            try {
+                await fetchWithAuth(`${API_BASE}/settings`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(settings)
+                });
+
+                showSuccess('Settings saved successfully!');
+
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function rebootDevice() {
+            if (confirm('Are you sure you want to reboot the device?')) {
+                try {
+                    await fetchWithAuth('/api/system/reboot', {
+                        method: 'POST'
+                    });
+                    showSuccess('🔄 Device rebooting...');
+                } catch (error) {
+                    showError('Reboot failed: ' + error.message);
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            generateSettingsForm();
+        });
+    </script>
+</body>
+</html>

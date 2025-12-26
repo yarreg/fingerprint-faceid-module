@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Firmware Update - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>🔄 Firmware Update</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card">
+            <div id="firmware-info"></div>
+
+            <form id="update-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label>📂 Select Firmware File</label>
+                    <input type="file" id="firmware-file" accept=".bin">
+                </div>
+                <button type="submit" class="update-button">📤 Upload Firmware</button>
+            </form>
+
+            <div id="update-status"></div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load current firmware info
+            try {
+                const info = await fetchWithAuth('/api/system/firmware');
+                document.getElementById('firmware-info').innerHTML = `
+                    <h3>📊 Current Firmware</h3>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.02); border-radius: 8px;">
+                        <p><strong>Version:</strong> ${info.fw_version}</p>
+                        <p><strong>Build Date:</strong> ${info.build_date} ${info.build_time}</p>
+                        <p><strong>Git Hash:</strong> ${info.git_hash}</p>
+                    </div>
+                `;
+            } catch (error) {
+                showError('Failed to load firmware info: ' + error.message);
+            }
+
+            // Handle firmware upload
+            document.getElementById('update-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fileInput = document.getElementById('firmware-file');
+                const file = fileInput.files[0];
+
+                if (!file) {
+                    showError('Please select a firmware file');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('firmware', file);
+
+                try {
+                    const statusDiv = document.getElementById('update-status');
+                    statusDiv.innerHTML = `
+                        <div class="enrollment-progress">
+                            <p>⏳ Uploading firmware... Please wait.</p>
+                        </div>
+                    `;
+
+                    const response = await fetchWithAuth('/api/system/update', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        statusDiv.innerHTML = `
+                            <div class="success">
+                                ✅ Firmware update successful! Device will reboot in 2 seconds.
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    showError('Firmware update failed: ' + error.message);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

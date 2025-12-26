@@ -1,0 +1,18 @@
+{
+    "C_Cpp.intelliSenseEngine": "default",
+    "idf.espIdfPath": "/home/yarreg/esp/v5.4/esp-idf",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-builtin.cfg"
+    ],
+    "idf.port": "/dev/ttyS0",
+    "idf.toolsPath": "/home/yarreg/.espressif",
+    "idf.espIdfPathWin": "C:\\Users\\Yaroslav\\esp\\v5.5\\esp-idf",
+    "idf.toolsPathWin": "C:\\Users\\Yaroslav\\.espressif",
+    "idf.pythonInstallPath": "C:\\Users\\Yaroslav\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+    "idf.flashType": "UART",
+    "idf.portWin": "COM5",
+    "idf.monitorPort": "COM5",
+    "files.associations": {
+        "webserver.h": "c"
+    }
+}

@@ -1,0 +1,31 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "wifi.c"
+        "access_control.c"
+        "web_enrolling_handlers.c"
+        "web_ota.c"
+        "web_photo_handlers.c"
+        "web_settings_handlers.c"
+        "web_log_handlers.c"
+        "web_system_handlers.c"
+        "web_static_handlers.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        "app_update"
+        "esp_http_server"
+        "esp_wifi"
+        "json"
+        "settings"
+        "mqtt_helper"
+        "static"
+        "webserver"
+        "log_redirect"
+        "tabledb"
+        "sensor_manager"
+        "f900"
+        "r502"
+        "vl53l0x"
+        "buzzer"
+)

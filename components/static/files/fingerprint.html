@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fingerprint Management - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>👆 Fingerprint Management</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card">
+            <div class="button-row">
+                <button onclick="startEnrollment('fingerprint')" class="enroll-button">👆 Add New Fingerprint</button>
+                <div class="dropdown">
+                    <button class="dropdown-btn" onclick="toggleDropdown()">⋮</button>
+                    <div id="dropdown-menu" class="dropdown-content">
+                        <button onclick="clearAllFingerprints()" class="danger">Clear All Fingerprints</button>
+                    </div>
+                </div>
+            </div>
+            <div id="enrollment-status"></div>
+
+            <h3>📋 Registered Fingerprints</h3>
+            <table id="fingerprint-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Usage Count</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        let currentEnrollment = null;
+
+        function toggleDropdown() {
+            const dropdown = document.getElementById('dropdown-menu');
+            dropdown.classList.toggle('show');
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('dropdown-menu');
+            const dropdownBtn = document.querySelector('.dropdown-btn');
+
+            if (!dropdownBtn.contains(event.target) && !dropdown.contains(event.target)) {
+                dropdown.classList.remove('show');
+            }
+        });
+
+        async function startEnrollment(type) {
+            const userName = prompt("Enter user name for new fingerprint:");
+            if (!userName) return;
+
+            try {
+                currentEnrollment = await fetchWithAuth('/api/enrollment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: type,
+                        user_name: userName
+                    })
+                });
+                monitorEnrollmentProgress();
+
+            } catch (error) {
+                showError('Failed to start enrollment: ' + error.message);
+            }
+        }
+
+        async function monitorEnrollmentProgress() {
+            const status = await fetchWithAuth('/api/enrollment');
+
+            if (currentEnrollment != null) {
+                // ok looks like still enrolling
+
+                // check remaining steps
+                const remainingSteps = status.fingerprint_enroll_status?.remaining_steps ?? 0;
+                if (remainingSteps > 0) {
+                    // still in progress
+                    updateEnrollmentUI(status);
+                    setTimeout(monitorEnrollmentProgress, 1000);
+                    return;
+                }
+            }
+
+            // enrollment complete
+            loadFingerprints();
+            currentEnrollment = null;
+            clearEnrollmentUI();
+        }
+
+        function updateEnrollmentUI(status) {
+            const statusDiv = document.getElementById('enrollment-status');
+            const progress = status.fingerprint_enroll_status;
+            const remainingSteps = progress?.remaining_steps ?? 0;
+            statusDiv.innerHTML = `
+                <div class="enrollment-progress">
+                    <p><strong>👤 Enrolling:</strong> ${currentEnrollment.user_name}</p>
+                    <p><strong>🔄 Current Step:</strong> ${progress.current_step.replace(/_/g, ' ')}</p>
+                    <!-- <p><strong>⏳ Remaining Steps:</strong> ${remainingSteps}</p> -->
+                </div>
+            `;
+        }
+
+        function clearEnrollmentUI() {
+            const statusDiv = document.getElementById('enrollment-status');
+            statusDiv.innerHTML = '';
+        }
+
+        async function clearAllFingerprints() {
+            if (!confirm('This will remove all fingerprints from the sensor and database. Continue?')) {
+                return;
+            }
+            try {
+                await fetchWithAuth('/api/enrollments/fingerprint', { method: 'DELETE' });
+                showSuccess('All fingerprints cleared successfully');
+                clearEnrollmentUI();
+                currentEnrollment = null;
+                loadFingerprints();
+            } catch (error) {
+                showError('Failed to clear fingerprints: ' + error.message);
+            }
+        }
+
+        async function loadFingerprints() {
+            try {
+                const data = await fetchWithAuth('/api/enrollments/fingerprint');
+                populateFingerprintTable(data.items);
+            } catch (error) {
+                showError('Failed to load fingerprints: ' + error.message);
+            }
+        }
+
+        function populateFingerprintTable(items) {
+            const tbody = document.querySelector('#fingerprint-table tbody');
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${item.name}</td>
+                    <td><span class="status-indicator ${item.enabled ? 'status-active' : 'status-inactive'}"></span>
+                        ${item.enabled ? 'Enabled' : 'Disabled'}</td>
+                    <td>${item.usage_count}</td>
+                    <td>
+                        <button onclick="toggleFingerprint(${item.id}, ${!item.enabled})"
+                                class="${item.enabled ? 'secondary' : ''}">
+                            ${item.enabled ? '🔒 Disable' : '🔓 Enable'}
+                        </button>
+                        <button onclick="deleteFingerprint(${item.id})" class="danger">🗑️ Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function toggleFingerprint(id, enabled) {
+            try {
+                await fetchWithAuth(`/api/enrollments/fingerprint/${id}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: enabled})
+                });
+                loadFingerprints();
+                showSuccess(`✅ Fingerprint ${enabled ? 'enabled' : 'disabled'} successfully`);
+            } catch (error) {
+                showError('Failed to update fingerprint: ' + error.message);
+            }
+        }
+
+        async function deleteFingerprint(id) {
+            if (confirm('Are you sure you want to delete this fingerprint?')) {
+                try {
+                    await fetchWithAuth(`/api/enrollments/fingerprint/${id}`, {
+                        method: 'DELETE'
+                    });
+                    loadFingerprints();
+                    showSuccess('✅ Fingerprint deleted successfully');
+                } catch (error) {
+                    showError('Deletion failed: ' + error.message);
+                }
+            }
+        }
+
+        // Load initial data
+        document.addEventListener('DOMContentLoaded', loadFingerprints);
+    </script>
+</body>
+</html>

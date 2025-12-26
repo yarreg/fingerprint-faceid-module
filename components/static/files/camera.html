@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Camera - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>📷 Camera Feed</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card" style="text-align: center;">
+            <h3>Live View</h3>
+            <img id="camera-feed" alt="Camera feed">
+            <div class="button-group">
+                <button onclick="refreshImage()">🔄 Refresh Image</button>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        async function refreshImage() {
+            try {
+                const timestamp = new Date().getTime();
+                const response = await fetch(`/api/photo?t=${timestamp}`);
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                document.getElementById('camera-feed').src = url;
+            } catch (error) {
+                showError('Failed to refresh image: ' + error.message);
+            }
+        }
+
+        // Load initial image
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('camera-feed').innerHTML = '<div style="padding: 2rem;">Loading camera feed...</div>';
+            refreshImage();
+        });
+    </script>
+</body>
+</html>

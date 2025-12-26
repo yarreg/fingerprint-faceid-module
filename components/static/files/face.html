@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Face Management - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>👤 Face Recognition Management</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card">
+            <button onclick="startEnrollment('face')" class="enroll-button">📸 Add New Face</button>
+            <div id="enrollment-status"></div>
+
+            <h3>📋 Registered Faces</h3>
+            <table id="face-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Usage Count</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        let currentEnrollment = null;
+
+        async function startEnrollment(type) {
+            const userName = prompt("Enter user name for new face:");
+            if (!userName) return;
+
+            try {
+                const enrollment = await fetchWithAuth('/api/enrollment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: type,
+                        user_name: userName
+                    })
+                });
+
+                currentEnrollment = enrollment;
+                monitorEnrollmentProgress();
+
+            } catch (error) {
+                showError('Failed to start enrollment: ' + error.message);
+            }
+        }
+
+        async function monitorEnrollmentProgress() {
+            try {
+                const status = await fetchWithAuth('/api/enrollment');
+
+                if (status.type === 'face') {
+                    updateEnrollmentUI(status);
+                    if (!status.face_enroll_status.remaining_steps.length) {
+                        showSuccess('✅ Face enrolled successfully!');
+                        loadFaces();
+                        currentEnrollment = null;
+                    } else {
+                        setTimeout(monitorEnrollmentProgress, 1000);
+                    }
+                }
+            } catch (error) {
+                showError('Enrollment monitoring failed: ' + error.message);
+            }
+        }
+
+        function updateEnrollmentUI(status) {
+            const statusDiv = document.getElementById('enrollment-status');
+            const progress = status.face_enroll_status;
+            statusDiv.innerHTML = `
+                <div class="enrollment-progress">
+                    <p><strong>👤 Enrolling:</strong> ${currentEnrollment.user_name}</p>
+                    <p><strong>🔄 Current Step:</strong> ${progress.current_step.replace(/_/g, ' ')}</p>
+                    <p><strong>✅ Completed Steps:</strong> ${progress.passed_steps.length}</p>
+                </div>
+            `;
+        }
+
+        async function loadFaces() {
+            try {
+                const data = await fetchWithAuth('/api/enrollments/face');
+                populateFaceTable(data.items);
+            } catch (error) {
+                showError('Failed to load faces: ' + error.message);
+            }
+        }
+
+        function populateFaceTable(items) {
+            const tbody = document.querySelector('#face-table tbody');
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${item.name}</td>
+                    <td><span class="status-indicator ${item.enabled ? 'status-active' : 'status-inactive'}"></span>
+                        ${item.enabled ? 'Enabled' : 'Disabled'}</td>
+                    <td>${item.usage_count}</td>
+                    <td>
+                        <button onclick="toggleFace(${item.id}, ${!item.enabled})"
+                                class="${item.enabled ? 'secondary' : ''}">
+                            ${item.enabled ? '🔒 Disable' : '🔓 Enable'}
+                        </button>
+                        <button onclick="deleteFace(${item.id})" class="danger">🗑️ Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function toggleFace(id, enabled) {
+            try {
+                await fetchWithAuth(`/api/enrollments/face/${id}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: enabled})
+                });
+                loadFaces();
+                showSuccess(`✅ Face ${enabled ? 'enabled' : 'disabled'} successfully`);
+            } catch (error) {
+                showError('Failed to update face: ' + error.message);
+            }
+        }
+
+        async function deleteFace(id) {
+            if (confirm('Are you sure you want to delete this face?')) {
+                try {
+                    await fetchWithAuth(`/api/enrollments/face/${id}`, {
+                        method: 'DELETE'
+                    });
+                    loadFaces();
+                    showSuccess('✅ Face deleted successfully');
+                } catch (error) {
+                    showError('Deletion failed: ' + error.message);
+                }
+            }
+        }
+
+        // Load initial data
+        document.addEventListener('DOMContentLoaded', loadFaces);
+    </script>
+</body>
+</html>

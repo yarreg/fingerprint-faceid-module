@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Log Viewer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Log Viewer</h1>
+        <a href="/index.html" class="back-link">Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card">
+            <h3>Live Logs</h3>
+            <div class="form-group">
+                <label for="refresh-interval">Refresh interval (seconds)</label>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                    <input type="number" id="refresh-interval" min="1" max="60" value="5" style="max-width: 120px;">
+                    <button id="apply-interval" class="secondary">Update Interval</button>
+                    <button id="toggle-refresh" class="secondary">Pause Updates</button>
+                    <button id="toggle-scroll">Pause Auto-Scroll</button>
+                </div>
+            </div>
+
+            <div class="form-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 160px;">
+                    <label for="level-filter">Level</label>
+                    <select id="level-filter">
+                        <option value="ALL">All</option>
+                        <option value="E">Error</option>
+                        <option value="W">Warning</option>
+                        <option value="I">Info</option>
+                        <option value="D">Debug</option>
+                        <option value="V">Verbose</option>
+                    </select>
+                </div>
+                <div style="flex: 2; min-width: 200px;">
+                    <label for="tag-filter">Tag filter</label>
+                    <input type="text" id="tag-filter" placeholder="Type a tag to filter">
+                </div>
+            </div>
+
+            <div class="button-group" style="justify-content: flex-start;">
+                <button id="download-logs" class="secondary">Download Displayed Logs</button>
+                <button id="clear-logs" class="secondary">Clear View</button>
+            </div>
+
+            <div id="log-status-text" style="color: var(--text-light); margin-top: 0.5rem;">Waiting for logs...</div>
+        </div>
+
+        <div class="card">
+            <div id="log-table-wrapper" style="max-height: 520px; overflow-y: auto;">
+                <table id="log-table">
+                    <thead>
+                        <tr>
+                            <th>Index</th>
+                            <th>Timestamp (ms)</th>
+                            <th>Level</th>
+                            <th>Tag</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        let logEntries = [];
+        let lastIndex = 0;
+        let autoScroll = true;
+        let refreshPaused = false;
+        let refreshSeconds = 5;
+        let pollHandle = null;
+        const MAX_LOG_ROWS = 500;
+        let isFetching = false;
+
+        const statusEl = () => document.getElementById('log-status-text');
+
+        function setStatus(message, isError = false) {
+            const el = statusEl();
+            el.textContent = message;
+            el.style.color = isError ? 'var(--danger-color)' : 'var(--text-light)';
+        }
+
+        function updateToggleLabels() {
+            document.getElementById('toggle-scroll').textContent = autoScroll ? 'Pause Auto-Scroll' : 'Resume Auto-Scroll';
+            document.getElementById('toggle-refresh').textContent = refreshPaused ? 'Resume Updates' : 'Pause Updates';
+        }
+
+        function applyFilters() {
+            const level = document.getElementById('level-filter').value;
+            const tagText = document.getElementById('tag-filter').value.trim().toLowerCase();
+            return logEntries.filter(entry => {
+                if (level !== 'ALL' && entry.level !== level) {
+                    return false;
+                }
+                if (tagText && (!entry.tag || !entry.tag.toLowerCase().includes(tagText))) {
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function renderLogs() {
+            const tbody = document.querySelector('#log-table tbody');
+            tbody.innerHTML = '';
+            const filtered = applyFilters();
+
+            filtered.forEach(entry => {
+                const row = document.createElement('tr');
+                [entry.index, entry.timestamp, entry.level, entry.tag, entry.message].forEach(value => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                tbody.appendChild(row);
+            });
+
+            if (autoScroll) {
+                const wrapper = document.getElementById('log-table-wrapper');
+                wrapper.scrollTop = wrapper.scrollHeight;
+            }
+        }
+
+        function schedulePolling() {
+            if (pollHandle) {
+                clearInterval(pollHandle);
+            }
+            pollHandle = setInterval(fetchLogs, refreshSeconds * 1000);
+        }
+
+        async function fetchLogs() {
+            if (refreshPaused || isFetching) {
+                return;
+            }
+            isFetching = true;
+
+            const fromIndex = lastIndex ? lastIndex + 1 : 0;
+            const url = `/api/log?from_index=${fromIndex}`;
+
+            try {
+                const response = await fetch(url, { headers: getAuthHeaders() });
+                if (!response.ok) {
+                    let message = `HTTP error ${response.status}`;
+                    try {
+                        const errorBody = await response.json();
+                        if (errorBody && errorBody.message) {
+                            message = errorBody.message;
+                        }
+                    } catch (e) {
+                        // Ignore parse failures
+                    }
+
+                    setStatus(message, true);
+                    if (response.status === 503) {
+                        refreshPaused = true;
+                        updateToggleLabels();
+                    }
+                    isFetching = false;
+                    return;
+                }
+
+                const data = await response.json();
+                const oldestAvailable = Number(response.headers.get('X-Log-Oldest-Index') || 0);
+
+                if (fromIndex > 0 && oldestAvailable > fromIndex) {
+                    setStatus(`Some logs were dropped (oldest available is ${oldestAvailable}).`, true);
+                }
+
+                if (Array.isArray(data) && data.length) {
+                    logEntries = logEntries.concat(data);
+                    lastIndex = data[data.length - 1].index;
+                    if (logEntries.length > MAX_LOG_ROWS) {
+                        logEntries = logEntries.slice(logEntries.length - MAX_LOG_ROWS);
+                    }
+                    renderLogs();
+                    setStatus(`Showing ${applyFilters().length} of ${logEntries.length} logs. Next index: ${lastIndex + 1}.`);
+                } else if (logEntries.length === 0) {
+                    setStatus('No logs yet. Waiting for new messages...');
+                }
+            } catch (error) {
+                setStatus(error.message || 'Failed to load logs', true);
+            }
+            isFetching = false;
+        }
+
+        function downloadLogs() {
+            const filtered = applyFilters();
+            const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'logs.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function clearLogs() {
+            logEntries = [];
+            lastIndex = 0;
+            renderLogs();
+            setStatus('Cleared local log view. Waiting for new logs...');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('refresh-interval').value = refreshSeconds;
+            document.getElementById('apply-interval').addEventListener('click', () => {
+                const value = Number(document.getElementById('refresh-interval').value);
+                if (Number.isNaN(value) || value < 1 || value > 60) {
+                    showError('Refresh interval must be between 1 and 60 seconds.');
+                    return;
+                }
+                refreshSeconds = value;
+                schedulePolling();
+                setStatus(`Refresh interval set to ${refreshSeconds}s.`);
+            });
+
+            document.getElementById('toggle-scroll').addEventListener('click', () => {
+                autoScroll = !autoScroll;
+                updateToggleLabels();
+            });
+
+            document.getElementById('toggle-refresh').addEventListener('click', () => {
+                refreshPaused = !refreshPaused;
+                updateToggleLabels();
+                if (!refreshPaused) {
+                    fetchLogs();
+                }
+            });
+
+            document.getElementById('level-filter').addEventListener('change', () => {
+                renderLogs();
+            });
+            document.getElementById('tag-filter').addEventListener('input', () => {
+                renderLogs();
+            });
+            document.getElementById('download-logs').addEventListener('click', downloadLogs);
+            document.getElementById('clear-logs').addEventListener('click', clearLogs);
+
+            updateToggleLabels();
+            fetchLogs();
+            schedulePolling();
+        });
+    </script>
+</body>
+</html>

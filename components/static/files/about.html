@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>About - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>ℹ️ System Information</h1>
+        <a href="/index.html" class="back-link">← Back to Menu</a>
+    </header>
+
+    <main>
+        <div class="card" id="system-info">
+            <h3>🔐 Firmware Details</h3>
+            <div id="firmware-details" style="margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.02); border-radius: 8px;"></div>
+
+            <h3 style="margin-top: 2rem;">💻 Device Information</h3>
+            <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,0,0,0.02); border-radius: 8px;">
+                <p><strong>🛠️ IDF Version:</strong> <span id="idf-version"></span></p>
+                <p><strong>📅 Build Date:</strong> <span id="build-date"></span></p>
+                <p><strong>🔄 Git Hash:</strong> <span id="git-hash"></span></p>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const info = await fetchWithAuth('/api/system/firmware');
+                document.getElementById('firmware-details').innerHTML = `
+                    <p><strong>📊 Version:</strong> ${info.fw_version}</p>
+                    <p><strong>📅 Build Date:</strong> ${info.build_date} ${info.build_time}</p>
+                `;
+                document.getElementById('idf-version').textContent = info.idf_version;
+                document.getElementById('build-date').textContent = info.build_date + ' ' + info.build_time;
+                document.getElementById('git-hash').textContent = info.git_hash;
+            } catch (error) {
+                showError('Failed to load system info: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
