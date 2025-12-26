@@ -275,8 +275,6 @@ Place files in `components/static/files/`. They are:
 - [F900 Face Module](docs/F900-1.md) - Part 1
 - [F900 Face Module](docs/F900-2.md) - Part 2
 - [R502 Fingerprint Module](docs/R502.md)
-- [REST API Reference](specs/REST-API.md)
-- [Russian Documentation](specs/README.ru.md)
 
 ## License
 
